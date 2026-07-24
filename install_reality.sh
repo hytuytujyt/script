@@ -6,8 +6,8 @@ set -euo pipefail
 # LISTEN_PORT=xxxxx    表示NAT机器，NAT映射到内部443端口的外部端口号是xxxxx
 LISTEN_PORT="${LISTEN_PORT:-0}"
 SERVER_LISTEN_PORT=443                                        # sing-box 实际监听端口，恒定443
-REALITY_DEST="${REALITY_DEST:-www.microsoft.com:443}"        # 伪装握手目标
-REALITY_SERVER_NAME="${REALITY_SERVER_NAME:-www.microsoft.com}"
+REALITY_DEST="${REALITY_DEST:-addons.mozilla.org:443}"        # 伪装握手目标
+REALITY_SERVER_NAME="${REALITY_SERVER_NAME:-addons.mozilla.org}"
 CONFIG_DIR="/etc/sing-box"
 CONFIG_FILE="${CONFIG_DIR}/config.json"
 
