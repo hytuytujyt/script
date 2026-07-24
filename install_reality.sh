@@ -96,8 +96,6 @@ print_result() {
     echo ""
     echo "============ 客户端 config.json ============"
     cat <<EOF
-{
-  "outbounds": [
     {
       "type": "vless",
       "tag": "reality-out",
@@ -116,8 +114,6 @@ print_result() {
         }
       }
     }
-  ]
-}
 EOF
     echo "=============================================="
   } | tee "${CONFIG_DIR}/node_output.txt"
