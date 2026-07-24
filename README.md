@@ -5,3 +5,5 @@ curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/install_real
 如果是nat机器需要把LISTEN_PORT=x中的x换成映射后的端口
 
 SERVER_IP=x需要把公网ip替换掉y
+
+输入shownode展示节点（需要重新登录才能生效）
