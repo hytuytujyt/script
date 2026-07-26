@@ -72,7 +72,36 @@ write_config() {
 EOF
 }
 
-### 4. 启动服务（自动识别 systemd / openrc） ###
+### 4. 检查并放行防火墙 ###
+check_and_open_firewall() {
+  local port=$SERVER_LISTEN_PORT
+  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "active"; then
+    if ! ufw status 2>/dev/null | grep -q "$port"; then
+      ufw allow "$port" >/dev/null 2>&1
+      echo "[✓] ufw 已自动放行端口 $port"
+    else
+      echo "[✓] ufw 端口 $port 已放行"
+    fi
+  fi
+  if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state 2>/dev/null | grep -q "running"; then
+    if ! firewall-cmd --list-ports 2>/dev/null | grep -q "$port/tcp"; then
+      firewall-cmd --add-port="$port/tcp" --permanent >/dev/null 2>&1
+      firewall-cmd --reload >/dev/null 2>&1
+      echo "[✓] firewalld 已自动放行端口 $port"
+    else
+      echo "[✓] firewalld 端口 $port 已放行"
+    fi
+  fi
+  if command -v iptables >/dev/null 2>&1; then
+    if iptables -L INPUT -n 2>/dev/null | grep -q "DROP\|REJECT"; then
+      echo "[!] iptables 有拒绝规则，可能拦截端口 $port"
+      echo "    请手动检查: iptables -L INPUT -n | grep DROP"
+    fi
+  fi
+  echo "[*] 如果连不上，请检查云厂商控制面板的安全组/防火墙是否放行了端口 $port"
+}
+
+### 5. 启动服务（自动识别 systemd / openrc） ###
 start_service() {
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable sing-box && systemctl restart sing-box
@@ -83,7 +112,7 @@ start_service() {
   fi
 }
 
-### 5. 输出 vless 链接 + 客户端 config.json，并存档一份 ###
+### 6. 输出 vless 链接 + 客户端 config.json，并存档一份 ###
 print_result() {
   local ip="$RESOLVED_IP"
   local link="vless://${UUID}@${ip}:${OUTPUT_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_SERVER_NAME}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp#reality-$(hostname)"
@@ -119,7 +148,7 @@ EOF
   } | tee "${CONFIG_DIR}/node_output.txt"
 }
 
-### 6. 写入 shownode 快捷指令（同时兼容 bash 和 Alpine 的 ash） ###
+### 7. 写入 shownode 快捷指令（同时兼容 bash 和 Alpine 的 ash） ###
 setup_alias() {
   local alias_line="alias shownode='cat ${CONFIG_DIR}/node_output.txt'"
   for rc in ~/.bashrc ~/.profile; do
