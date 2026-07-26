@@ -33,8 +33,8 @@ generate_credentials() {
   echo "[*] 生成 Reality 密钥对与身份信息 ..."
   local key_output
   key_output=$(sing-box generate reality-keypair)
-  PRIVATE_KEY=$(echo "$key_output" | awk '/PrivateKey/ {print $2}')
-  PUBLIC_KEY=$(echo "$key_output" | awk '/PublicKey/ {print $2}')
+  PRIVATE_KEY=$(echo "$key_output" | awk '/PrivateKey/{print $2}')
+  PUBLIC_KEY=$(echo "$key_output" | awk '/PublicKey/{print $2}')
   UUID=$(sing-box generate uuid)
   SHORT_ID=$(sing-box generate rand 8 --hex)
 }
