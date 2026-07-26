@@ -1,4 +1,4 @@
-```bash
+```
 curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh | LISTEN_PORT=x SERVER_IP=y bash
 ```
 ## 一、替换参数 x y
