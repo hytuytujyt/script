@@ -163,6 +163,7 @@ install_singbox
 generate_credentials
 RESOLVED_IP="$SERVER_IP"
 write_config
+check_and_open_firewall
 start_service
 print_result
 setup_alias
