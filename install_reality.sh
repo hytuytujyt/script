@@ -132,7 +132,7 @@ setup_alias() {
 
 install_singbox
 generate_credentials
-RESOLVED_IP="${SERVER_IP:-$(curl -s4 ifconfig.me || curl -s6 ifconfig.me)}"
+RESOLVED_IP="$SERVER_IP"
 write_config
 start_service
 print_result
