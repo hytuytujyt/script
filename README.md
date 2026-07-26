@@ -2,7 +2,7 @@ curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/install_real
 
 如果是alpine，需要先apk update && apk add curl bash
 
-如果是nat机器需要把LISTEN_PORT=x中的x换成映射后的端口,不是nat把x设陈0端口会自动设置为443
+如果是nat机器需要把LISTEN_PORT=x中的x换成映射后的端口,非nat或ipv6 only的机器把x换成0，端口会自动设置为443
 
 SERVER_IP=y需要用公网ip替换掉y
 
