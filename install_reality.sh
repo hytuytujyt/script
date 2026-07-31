@@ -1,78 +1,11 @@
-#!/bin/sh
-# =====================================================================
-#  install_reality.sh (单文件自举版)
-#  兼容 Alpine / Ubuntu / Debian / Fedora / CentOS / openSUSE 等
-#
-#  用法:
-#    把本文件弄到服务器上(任意方式),然后只需执行:
-#        sh install_reality.sh
-#    脚本会先自动补齐 bash/curl 依赖,再自动用 bash 重新执行自己,
-#    全程你只跑这一条命令,无需手动装依赖。
-#
-#  参数(环境变量)照旧:
-#        LISTEN_PORT=0 SERVER_IP=1.2.3.4 sh install_reality.sh
-#
-#  首次以 sh 运行时执行"引导段",装好依赖后 exec bash 自举;
-#  第二次以 bash 运行时(BASH_VERSION 已存在)跳过引导段,直接进正文。
-# =====================================================================
-
-if [ -z "${BASH_VERSION:-}" ]; then
-  # ---------------------------------------------------------------
-  #  引导段 (POSIX sh 兼容,可使 busybox ash 运行)
-  # ---------------------------------------------------------------
-  _cmd() { command -v "$1" >/dev/null 2>&1; }
-
-  # 缺则装:  bash(跑正文需要)  curl(下载 sing-box 需要)
-  _need_install=""
-  _cmd bash || _need_install="$_need_install bash"
-  _cmd curl  || _need_install="$_need_install curl"
-
-  if [ -n "$_need_install" ]; then
-    echo "[*] 检测到缺少依赖:$_need_install ,开始自动安装 ..."
-    if _cmd apk; then                       # Alpine
-      apk update && apk add --no-cache bash curl
-    elif _cmd apt-get; then                 # Debian / Ubuntu
-      export DEBIAN_FRONTEND=noninteractive
-      apt-get update
-      apt-get install -y bash curl
-    elif _cmd dnf; then                     # Fedora / RHEL9+ / Rocky / Alma
-      dnf makecache
-      dnf install -y bash curl
-    elif _cmd yum; then                     # CentOS7 / RHEL7
-      yum install -y bash curl
-    elif _cmd zypper; then                  # openSUSE / SLES
-      zypper --non-interactive install bash curl
-    elif _cmd pacman; then                  # Arch
-      pacman -Sy --noconfirm bash curl
-    else
-      echo "[!] 未识别的包管理器,请手动安装 bash 和 curl" >&2
-      exit 1
-    fi
-
-    # 复查
-    if ! _cmd bash || ! _cmd curl; then
-      echo "[!] 依赖安装未成功,请手动检查" >&2
-      exit 1
-    fi
-    echo "[✓] 依赖安装完成"
-  else
-    echo "[✓] bash / curl 均已就绪"
-  fi
-
-  # 用 bash 重新执行本脚本(正文是 bash 语法)
-  exec bash "$0" "$@"
-fi
-
-# =====================================================================
-#  正文段 (此时已在 bash 下运行)
-# =====================================================================
+#!/usr/bin/env bash
 set -euo pipefail
 
 ### 可通过环境变量覆盖的配置 ###
-# LISTEN_PORT=0        表示非NAT机器,内网/外部都用443
-# LISTEN_PORT=xxxxx    表示NAT机器,NAT映射到内部443端口的外部端口号是xxxxx
+# LISTEN_PORT=0        表示非NAT机器，内网/外部都用443
+# LISTEN_PORT=xxxxx    表示NAT机器，NAT映射到内部443端口的外部端口号是xxxxx
 LISTEN_PORT="${LISTEN_PORT:-0}"
-SERVER_LISTEN_PORT=443                                        # sing-box 实际监听端口,恒定443
+SERVER_LISTEN_PORT=443                                        # sing-box 实际监听端口，恒定443
 REALITY_DEST="${REALITY_DEST:-addons.mozilla.org:443}"        # 伪装握手目标
 REALITY_SERVER_NAME="${REALITY_SERVER_NAME:-addons.mozilla.org}"
 CONFIG_DIR="/etc/sing-box"
@@ -85,10 +18,10 @@ else
   OUTPUT_PORT=$LISTEN_PORT
 fi
 
-### 1. 安装 sing-box(幂等,已装则跳过)###
+### 1. 安装 sing-box（幂等，已装则跳过）###
 install_singbox() {
   if command -v sing-box >/dev/null 2>&1; then
-    echo "[*] sing-box 已安装,跳过"
+    echo "[*] sing-box 已安装，跳过"
     return
   fi
   echo "[*] 安装 sing-box ..."
@@ -106,7 +39,7 @@ generate_credentials() {
   SHORT_ID=$(sing-box generate rand 8 --hex)
 }
 
-### 3. 写入服务端配置文件(监听端口恒定443)###
+### 3. 写入服务端配置文件（监听端口恒定443）###
 write_config() {
   mkdir -p "$CONFIG_DIR"
   local dest_host="${REALITY_DEST%:*}"
@@ -161,25 +94,25 @@ check_and_open_firewall() {
   fi
   if command -v iptables >/dev/null 2>&1; then
     if iptables -L INPUT -n 2>/dev/null | grep -q "DROP\|REJECT"; then
-      echo "[!] iptables 有拒绝规则,可能拦截端口 $port"
+      echo "[!] iptables 有拒绝规则，可能拦截端口 $port"
       echo "    请手动检查: iptables -L INPUT -n | grep DROP"
     fi
   fi
-  echo "[*] 如果连不上,请检查云厂商控制面板的安全组/防火墙是否放行了端口 $port"
+  echo "[*] 如果连不上，请检查云厂商控制面板的安全组/防火墙是否放行了端口 $port"
 }
 
-### 5. 启动服务(自动识别 systemd / openrc) ###
+### 5. 启动服务（自动识别 systemd / openrc） ###
 start_service() {
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable sing-box && systemctl restart sing-box
   elif command -v rc-service >/dev/null 2>&1; then
     rc-update add sing-box default && rc-service sing-box restart
   else
-    echo "[!] 未识别到 systemd/openrc,请手动启动 sing-box"
+    echo "[!] 未识别到 systemd/openrc，请手动启动 sing-box"
   fi
 }
 
-### 6. 输出 vless 链接 + 客户端 config.json,并存档一份 ###
+### 6. 输出 vless 链接 + 客户端 config.json，并存档一份 ###
 print_result() {
   local ip="$RESOLVED_IP"
   local link="vless://${UUID}@${ip}:${OUTPUT_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_SERVER_NAME}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp#reality-$(hostname)"
@@ -215,7 +148,7 @@ EOF
   } | tee "${CONFIG_DIR}/node_output.txt"
 }
 
-### 7. 写入 shownode 快捷指令(同时兼容 bash 和 Alpine 的 ash) ###
+### 7. 写入 shownode 快捷指令（同时兼容 bash 和 Alpine 的 ash） ###
 setup_alias() {
   local alias_line="alias shownode='cat ${CONFIG_DIR}/node_output.txt'"
   for rc in ~/.bashrc ~/.profile; do
@@ -235,4 +168,4 @@ start_service
 print_result
 setup_alias
 echo ""
-echo "[*] 已写入 shownode 快捷指令,重新连一次SSH(或执行 source ~/.bashrc)后即可用 shownode 查看节点信息"
+echo "[*] 已写入 shownode 快捷指令，重新连一次SSH（或执行 source ~/.bashrc）后即可用 shownode 查看节点信息"
