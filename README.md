@@ -4,13 +4,16 @@
 
 ## 一、安装
 
-一条命令，自动完成：**补依赖 → 装 sing-box → 生成节点**。
+一条命令自动完成：**补依赖 → 装 sing-box → 生成节点**。脚本会自动挑选可用的下载器（wget → curl → busybox wget），任意系统任一搭配都能取到脚本：
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh | LISTEN_PORT=x SERVER_IP=y sh
+{ command -v wget >/dev/null 2>&1 && wget -qO- <https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh> \
+  || command -v curl >/dev/null 2>&1 && curl -fsSL <https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh> \
+  || command -v busybox >/dev/null 2>&1 && busybox wget -qO- <https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh>; } \
+  | LISTEN_PORT=x SERVER_IP=y sh
 ```
 
-> 若机器已有 curl（非精简系统），也可用 `curl -fsSL ... | LISTEN_PORT=x SERVER_IP=y sh`。
+> 原理：`&&`/`||` 链会从左到右找第一个存在的下载器。只装了 curl 的 Debian、只剩 busybox 的精简 Alpine，都能命中对应分支。
 
 脚本会自动识别系统并安装缺少的 bash / curl：
 
@@ -24,11 +27,22 @@ wget -qO- https://raw.githubusercontent.com/hytuytujyt/script/main/install_reali
 | Arch             | pacman   | ❌ 自动安装        |
 
 > 说明：新装 VPS 通常已自带 bash 和 curl（直接跳过多余步骤）；只有精简 Alpine / 容器环境才需要自动补齐，脚本已处理。
+>
+> **关于精简/改装系统**：脚本引导段在 debian/ubuntu 上会自动用 apt 装齐 bash+curl；在 Alpine 上即便没有 curl，引导段也会先装好再自举。取脚本这一步若 wget/curl 都缺，还会尝试 `busybox wget` 兜底。
 
 ### 前置要求
 
 - 需要 **root** 权限
 - 确保 **端口（默认 443，或 NAT 映射的外部端口）未被占用**
+
+## 常见问题（排障）
+
+| 报错 | 原因 | 处理 |
+|------|------|------|
+| `wget: command not found` / `curl: command not found` | 精简系统没装该工具 | 换用上面的多功能一条命令（会自动换下载器）；或先装再跑：Debian/Ubuntu `apt-get install -y curl`，Alpine `apk add curl` |
+| 一键命令执行后 `〔!〕未识别的包管理器` | 引导段没识别到熟悉的包管理器 | 按脚本提示手动装好 bash 和 curl 后重跑 |
+| 下载 sing-box 报 `certificate verify failed` / SSL 错误 | 系统缺 ca-certificates | 装证书：Debian `apt-get install -y ca-certificates`，Alpine `apk add ca-certificates`，然后重跑 |
+| 装完后连不上 | 云厂商安全组没放行端口 | 到云控制台放行 443（NAT 机器放行映射的外部端口） |
 
 ## 二、参数说明
 
