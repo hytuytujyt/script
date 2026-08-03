@@ -7,10 +7,7 @@
 一条命令自动完成：**补依赖 → 装 sing-box → 生成节点**。脚本会自动挑选可用的下载器（wget → curl → busybox wget），任意系统任一搭配都能取到脚本：
 
 ```bash
-{ command -v wget >/dev/null 2>&1 && wget -qO- <https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh> \
-  || command -v curl >/dev/null 2>&1 && curl -fsSL <https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh> \
-  || command -v busybox >/dev/null 2>&1 && busybox wget -qO- <https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh>; } \
-  | LISTEN_PORT=x SERVER_IP=y sh
+{ command -v wget >/dev/null 2>&1 && wget -qO- https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh || command -v curl >/dev/null 2>&1 && curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh || command -v busybox >/dev/null 2>&1 && busybox wget -qO- https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh ; } | LISTEN_PORT=x SERVER_IP=y sh
 ```
 
 > 原理：`&&`/`||` 链会从左到右找第一个存在的下载器。只装了 curl 的 Debian、只剩 busybox 的精简 Alpine，都能命中对应分支。
