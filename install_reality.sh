@@ -440,13 +440,18 @@ EOF
   } | tee "${CONFIG_DIR}/node_output.txt"
 }
 
-### 7. 写入 shownode 快捷指令(同时兼容 bash 和 Alpine 的 ash) ###
+### 7. 写入 shownode / log 快捷指令(同时兼容 bash 和 Alpine 的 ash) ###
 setup_alias() {
   local alias_line="alias shownode='cat ${CONFIG_DIR}/node_output.txt'"
+  local log_line
+  log_line="alias log='tail -n 100 /var/log/sing-box.log; echo \"[轮转档案]\"; ls -lh /var/log/sing-box.log* 2>/dev/null'"
   for rc in ~/.bashrc ~/.profile; do
     touch "$rc"
     if ! grep -qxF "$alias_line" "$rc" 2>/dev/null; then
       echo "$alias_line" >> "$rc"
+    fi
+    if ! grep -qxF "$log_line" "$rc" 2>/dev/null; then
+      echo "$log_line" >> "$rc"
     fi
   done
 }
