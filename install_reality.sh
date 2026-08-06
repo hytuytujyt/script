@@ -242,7 +242,7 @@ write_config() {
   local dest_port="${REALITY_DEST##*:}"
   cat > "$CONFIG_FILE" <<EOF
 {
-  "log": { "level": "info" },
+  "log": { "level": "info", "output": "/var/log/sing-box.log", "timestamp": true },
   "inbounds": [
     {
       "type": "vless",
@@ -359,6 +359,51 @@ EOF
   fi
 }
 
+### 5.1 配置日志轮转(logrotate) ###
+setup_logrotate() {
+  _info2 "配置日志轮转(logrotate) ..."
+  cat > /etc/logrotate.d/sing-box <<'EOF'
+/var/log/sing-box.log {
+    daily
+    rotate 3
+    compress
+    maxsize 10M
+    missingok
+    notifempty
+    copytruncate
+}
+EOF
+
+  # 各系统安装 logrotate(自动识别包管理器)
+  if _cmd apk; then
+    apk add --no-cache logrotate >/dev/null 2>&1 || true
+  elif _cmd apt-get; then
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get install -y logrotate >/dev/null 2>&1 || true
+  elif _cmd dnf; then
+    dnf install -y logrotate >/dev/null 2>&1 || true
+  elif _cmd yum; then
+    yum install -y logrotate >/dev/null 2>&1 || true
+  elif _cmd zypper; then
+    zypper --non-interactive install logrotate >/dev/null 2>&1 || true
+  fi
+
+  # 关键区别:
+  # - Debian/Ubuntu: 装 logrotate 自带 /etc/cron.daily 定时,无需额外处理
+  # - Alpine: logrotate 不会自动调度,需放进 crond 的 daily 周期
+  if _cmd apk; then
+    local periodic=/etc/periodic/daily/logrotate
+    cat > "$periodic" <<'EOF'
+#!/bin/sh
+/usr/sbin/logrotate /etc/logrotate.conf >/dev/null 2>&1
+EOF
+    chmod +x "$periodic"
+    rc-service crond start >/dev/null 2>&1 || true
+  fi
+
+  _ok2 "日志轮转已配置:单文件>10M 或每日轮转,保留3份并压缩,上限约30M"
+}
+
 ### 6. 输出 vless 链接 + 客户端 config.json,并存档一份 ###
 print_result() {
   local ip="$RESOLVED_IP"
@@ -412,6 +457,7 @@ RESOLVED_IP="$SERVER_IP"
 write_config
 check_and_open_firewall
 start_service
+setup_logrotate
 print_result
 setup_alias
 echo ""
