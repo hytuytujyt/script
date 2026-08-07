@@ -105,6 +105,7 @@ LISTEN_PORT="${LISTEN_PORT:-0}"
 SERVER_LISTEN_PORT=443                                        # sing-box 实际监听端口,恒定443
 REALITY_DEST="${REALITY_DEST:-addons.mozilla.org:443}"        # 伪装握手目标
 REALITY_SERVER_NAME="${REALITY_SERVER_NAME:-addons.mozilla.org}"
+NODE_NAME="${NODE_NAME:-reality-$(hostname)}"        # 节点名(YAML/链接里显示,可用 NODE_NAME 环境变量覆盖)
 CONFIG_DIR="/etc/sing-box"
 CONFIG_FILE="${CONFIG_DIR}/config.json"
 
@@ -404,10 +405,10 @@ EOF
   _ok2 "日志轮转已配置:单文件>10M 或每日轮转,保留3份并压缩,上限约30M"
 }
 
-### 6. 输出 vless 链接 + 客户端 config.json,并存档一份 ###
+### 6. 输出 vless 链接 + JSON + YAML,并存档一份 ###
 print_result() {
   local ip="$RESOLVED_IP"
-  local link="vless://${UUID}@${ip}:${OUTPUT_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_SERVER_NAME}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp#reality-$(hostname)"
+  local link="vless://${UUID}@${ip}:${OUTPUT_PORT}?encryption=none&flow=xtls-rprx-vision&security=reality&sni=${REALITY_SERVER_NAME}&fp=chrome&pbk=${PUBLIC_KEY}&sid=${SHORT_ID}&type=tcp#${NODE_NAME}"
 
   {
     echo ""
@@ -435,6 +436,24 @@ print_result() {
         }
       }
     }
+EOF
+
+    echo ""
+    echo "============ Clash / Mihomo 客户端 YAML ============"
+    cat <<EOF
+  - name: ${NODE_NAME}
+    type: vless
+    server: ${ip}
+    port: ${OUTPUT_PORT}
+    uuid: ${UUID}
+    flow: xtls-rprx-vision
+    tls: true
+    servername: ${REALITY_SERVER_NAME}
+    client-fingerprint: chrome
+    reality-opts:
+      public-key: ${PUBLIC_KEY}
+      short-id: ${SHORT_ID}
+    network: tcp
 EOF
     echo "=============================================="
   } | tee "${CONFIG_DIR}/node_output.txt"
