@@ -526,21 +526,6 @@ setup_ssh_key() {
   _warn2 "为兜底,密码登录保持开启;请先用私钥在 Termius 登录成功后,再手动关闭密码登录"
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 install_singbox
 generate_credentials
 RESOLVED_IP="$SERVER_IP"
