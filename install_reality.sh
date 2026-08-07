@@ -99,6 +99,7 @@ set -euo pipefail
 _info2() { printf '%s\n' "[*] $*"; }
 _ok2()   { printf '%s\n' "[✓] $*"; }
 _err2()  { printf '%s\n' "[!] $*" >&2; }
+_warn2() { printf '%s\n' "[!] $*" >&2; }
 
 ### 可通过环境变量覆盖的配置 ###
 LISTEN_PORT="${LISTEN_PORT:-0}"
@@ -475,6 +476,71 @@ setup_alias() {
   done
 }
 
+### 8. 生成 ed25519 SSH 密钥(公钥入服务器,私钥打印后即删) ###
+setup_ssh_key() {
+  _info2 "配置 SSH 密钥登录(ed25519) ..."
+  local key_file="/root/.ssh/id_ed25519"
+  local pub_file="/root/.ssh/id_ed25519.pub"
+  local auth_file="/root/.ssh/authorized_keys"
+
+  # 如需强制重新生成(例如私钥丢失): SSH_KEY_REGENERATE=1 sh install_reality.sh
+  if [ -n "${SSH_KEY_REGENERATE:-}" ]; then
+    _warn2 "检测到 SSH_KEY_REGENERATE,删除现有密钥并重新生成 ..."
+    rm -f "$key_file" "$pub_file"
+    sed -i '\#^ssh-ed25519 #d' "$auth_file" 2>/dev/null || true
+  fi
+
+  # 确保 ssh-keygen 可用
+  if ! command -v ssh-keygen >/dev/null 2>&1; then
+    if _cmd apk; then apk add --no-cache openssh >/dev/null 2>&1 || true
+    elif _cmd apt-get; then DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-client >/dev/null 2>&1 || true
+    fi
+  fi
+
+  mkdir -p /root/.ssh
+  chmod 700 /root/.ssh
+
+  # 幂等: 以公钥是否存在为准(私钥打印后被删除,故不能用私钥判断)
+  if [ -f "$pub_file" ]; then
+    _info2 "检测到已有 SSH 公钥 $pub_file,跳过生成(不会覆盖你已保存的私钥)"
+    return
+  fi
+
+  ssh-keygen -t ed25519 -f "$key_file" -N "" -C "root@$(hostname)" >/dev/null
+
+  # 公钥写进 authorized_keys(验签只需公钥)
+  grep -qF "$(cat "$pub_file")" "$auth_file" 2>/dev/null || cat "$pub_file" >> "$auth_file"
+  chmod 600 "$auth_file"
+
+  # 打印私钥(仅在首次生成时出现一次,不写入任何文件)
+  echo ""
+  echo "================ SSH 私钥(仅此一次,请立即存入 Termius) ================"
+  cat "$key_file"
+  echo "========================================================================="
+  echo ""
+  _warn2 "以上是 SSH 私钥,只显示这一次,现在将从服务器删除,请务必先保存好!"
+
+  # 删除服务器上的私钥,只留公钥(服务器验签用不到私钥)
+  rm -f "$key_file"
+  _ok2 "SSH 公钥已写入 $auth_file;私钥已从服务器删除"
+  _warn2 "为兜底,密码登录保持开启;请先用私钥在 Termius 登录成功后,再手动关闭密码登录"
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 install_singbox
 generate_credentials
 RESOLVED_IP="$SERVER_IP"
@@ -484,5 +550,6 @@ start_service
 setup_logrotate
 print_result
 setup_alias
+setup_ssh_key
 echo ""
 _ok2 "已写入 shownode 快捷指令,重新连一次SSH(或执行 source ~/.bashrc)后即可用 shownode 查看节点信息"
