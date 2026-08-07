@@ -243,7 +243,7 @@ write_config() {
   local dest_port="${REALITY_DEST##*:}"
   cat > "$CONFIG_FILE" <<EOF
 {
-  "log": { "level": "info", "output": "/var/log/sing-box.log", "timestamp": true },
+  "log": { "level": "warn", "output": "/var/log/sing-box.log", "timestamp": true },
   "inbounds": [
     {
       "type": "vless",
