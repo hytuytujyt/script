@@ -16,7 +16,7 @@
 复制下面**一整行**粘贴执行即可（GitHub 直拉 + 环境变量注入，不会被换行符打断）：
 
 ```
-{ command -v wget >/dev/null 2>&1 && wget -qO- https://raw.githubusercontent.com/hytuujytj/script/main/install_reality.sh || command -v curl >/dev/null 2>&1 && curl -fsSL https://raw.githubusercontent.com/hytuujytj/script/main/install_reality.sh || command -v busybox >/dev/null 2>&1 && busybox wget -qO- https://raw.githubusercontent.com/hytuujytj/script/main/install_reality.sh ; } | LISTEN_PORT=x SERVER_IP=y NODE_NAME=z sh
+{ command -v wget >/dev/null 2>&1 && wget -qO- https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh || command -v curl >/dev/null 2>&1 && curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh || command -v busybox >/dev/null 2>&1 && busybox wget -qO- https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh ; } | LISTEN_PORT=x SERVER_IP=y NODE_NAME=z sh
 ```
 
 下面按模式告诉你 x / y / z 分别填什么。
@@ -26,7 +26,7 @@
 ## 情况一：VLESS Reality 中转节点（默认 relay）
 
 ```
-{ command -v wget >/dev/null 2>&1 && wget -qO- https://raw.githubusercontent.com/hytuujytj/script/main/install_reality.sh || command -v curl >/dev/null 2>&1 && curl -fsSL https://raw.githubusercontent.com/hytuujytj/script/main/install_reality.sh || command -v busybox >/dev/null 2>&1 && busybox wget -qO- https://raw.githubusercontent.com/hytuujytj/script/main/install_reality.sh ; } | LISTEN_PORT=x SERVER_IP=y NODE_NAME=z sh
+{ command -v wget >/dev/null 2>&1 && wget -qO- https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh || command -v curl >/dev/null 2>&1 && curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh || command -v busybox >/dev/null 2>&1 && busybox wget -qO- https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh ; } | LISTEN_PORT=x SERVER_IP=y NODE_NAME=z sh
 ```
 
 | 环境变量 | 含义 | 示例 |
@@ -40,7 +40,7 @@
 ## 情况二：Shadowsocks 落地节点（MODE=landing）
 
 ```
-{ command -v wget >/dev/null 2>&1 && wget -qO- https://raw.githubusercontent.com/hytuujytj/script/main/install_reality.sh || command -v curl >/dev/null 2>&1 && curl -fsSL https://raw.githubusercontent.com/hytuujytj/script/main/install_reality.sh || command -v busybox >/dev/null 2>&1 && busybox wget -qO- https://raw.githubusercontent.com/hytuujytj/script/main/install_reality.sh ; } | MODE=landing LISTEN_PORT=x SERVER_IP=y NODE_NAME=z sh
+{ command -v wget >/dev/null 2>&1 && wget -qO- https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh || command -v curl >/dev/null 2>&1 && curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh || command -v busybox >/dev/null 2>&1 && busybox wget -qO- https://raw.githubusercontent.com/hytuytujyt/script/main/install_reality.sh ; } | MODE=landing LISTEN_PORT=x SERVER_IP=y NODE_NAME=z sh
 ```
 
 | 环境变量 | 含义 | 示例 |
