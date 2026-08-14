@@ -34,7 +34,7 @@
 | `ACTUAL_LISTEN_PORT=a` | **实际监听端口**：VPS 上 sing-box 真正监听的口（写进 config.json 的 `listen_port`）。填商家放行给你的端口 | `ACTUAL_LISTEN_PORT=2053` |
 | `LISTEN_PORT=b` | **输出/映射端口**：写进 vless 链接与防火墙的口。NAT 机器填映射后的外部端口；非 NAT 填与实际监听相同即可 | `LISTEN_PORT=62879` 或 `LISTEN_PORT=2053` |
 | `SERVER_IP=y` | 服务器的公网 IP | `SERVER_IP=45.207.35.102` |
-| `NODE_NAME=z` | 节点名（YAML 与 vless 链接里显示，可带 emoji）| `NODE_NAME=lzycat🇯🇵` |
+| `NODE_NAME=z` | 节点名（YAML 与 vless 链接里显示，可带 emoji）名字中间不能有空格，赋值错误导致整个命令失效| `NODE_NAME=lzycat🇯🇵` |
 
 ---
 
