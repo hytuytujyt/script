@@ -1,15 +1,3 @@
-# bbr_install
-
-> Linux VPS 一键开启 BBR（Google 拥塞控制算法），支持 **Alpine / Debian / Ubuntu** 三种系统。
-
-## 一键安装
-
-复制下面**一整行**粘贴执行即可（GitHub 直拉，自动选择 wget / curl / busybox，不会被换行符打断）：
-
-```
-{ command -v wget >/dev/null 2>&1 && wget -qO- https://raw.githubusercontent.com/hytuytujyt/bbr_install/main/install_bbr.sh || command -v curl >/dev/null 2>&1 && curl -fsSL https://raw.githubusercontent.com/hytuytujyt/bbr_install/main/install_bbr.sh || command -v busybox >/dev/null 2>&1 && busybox wget -qO- https://raw.githubusercontent.com/hytuytujyt/bbr_install/main/install_bbr.sh ; } | sh
-```
-
 # install_reality.sh — VLESS+Reality / Shadowsocks 节点一键安装脚本
 
 单文件自举版，一条命令完成节点部署。兼容 **Alpine / Debian / Ubuntu / Fedora / CentOS / openSUSE** 等主流发行版，内核（xray / sing-box）自动选择。
