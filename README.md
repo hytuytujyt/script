@@ -102,8 +102,6 @@ HY2_LISTEN_PORT=30000 \
 HY2_SERVER_PORTS=30000-30005 \
 HY2_PORT_HOPPING_MODE=local \
 HY2_HOP_INTERVAL=30s \
-ENABLE_VPS_SHAPING=1 \
-VPS_UPLOAD_MBIT=100 \
 NODE_NAME='我的HY2' \
 sh /tmp/install_reality.sh
 ```
@@ -121,7 +119,6 @@ NODE_NAME='我的HY2' \
 sh /tmp/install_reality.sh
 ```
 
-> 商家 NAT 机器可能是 OpenVZ / LXC 容器，缺少 `CAP_NET_ADMIN` 或 systemd，也可能有商家或 Docker 写的 NAT 规则，因此这里默认不启用限速。首次在 `external` 模式请求限速时，若缺少 `CAP_NET_ADMIN` 或 `tc` 查询被拒，且没有残留限速状态或组件，脚本会警告并继续安装，但**限速不会生效**；其他不满足条件的情况可能报错退出。确实要限速，请先阅读下面的「HY2 限速」一节。
 
 ### HY2 单端口（不跳跃）
 
@@ -134,8 +131,6 @@ MODE=hy2 \
 SERVER_IP=203.0.113.10 \
 HY2_LISTEN_PORT=30000 \
 HY2_SERVER_PORTS=30000 \
-ENABLE_VPS_SHAPING=1 \
-VPS_UPLOAD_MBIT=100 \
 NODE_NAME='我的HY2' \
 sh /tmp/install_reality.sh
 ```
@@ -166,8 +161,6 @@ HY2_LISTEN_PORT=30000 \
 HY2_SERVER_PORTS=30000-30005 \
 HY2_PORT_HOPPING_MODE=local \
 HY2_HOP_INTERVAL=30s \
-ENABLE_VPS_SHAPING=1 \
-VPS_UPLOAD_MBIT=100 \
 NODE_NAME='我的节点' \
 sh /tmp/install_reality.sh
 ```
@@ -187,7 +180,7 @@ NODE_NAME='我的节点' \
 sh /tmp/install_reality.sh
 ```
 
-TCP 和 UDP 可以使用相同端口号。`both` 的限速参数只作用于 HY2，不影响 REALITY。
+TCP 和 UDP 可以使用相同端口号。
 
 ## 参数说明
 
@@ -198,8 +191,6 @@ TCP 和 UDP 可以使用相同端口号。`both` 的限速参数只作用于 HY2
 | `HY2_SERVER_PORTS` | 手机访问的公网 UDP 端口，单端口、范围或逗号列表 |
 | `HY2_PORT_HOPPING_MODE` | 仅端口跳跃时可能需要：**普通公网 VPS** 填 `local`，由脚本建立本机转发；**商家 NAT 或直连**填 `external`（默认，可省略） |
 | `HY2_HOP_INTERVAL` | 跳跃间隔，默认 `30s`，单端口时无意义 |
-| `ENABLE_VPS_SHAPING` | 是否开启 HY2 限速：`1` 开启，`0` 关闭，不写则首次安装不限速、重装沿用原设置 |
-| `VPS_UPLOAD_MBIT` | 开启限速时必填，HY2 发往客户端的**总**速率上限，单位 Mbps，所有客户端共享 |
 | `NODE_NAME` | 节点名称，含空格时用引号包住 |
 
 `HY2_SERVER_PORTS` 写法:
@@ -212,31 +203,7 @@ HY2_SERVER_PORTS=30000-30005,40006    # 混合
 
 范围也可以用 `30000:30005`，含义相同。只填商家允许的端口，避免与其他 UDP 服务重叠。
 
-## HY2 限速
-
-限速是**本机出向整形**（`tc` + `tbf`），只作用于 HY2 发往客户端的流量，所有客户端共享这一个上限，BBR 不受影响。它和上游是不是 NAT 无关——只要本机能对网卡做 `tc`，就限得住。
-
-**限速的前提条件：** 通常不满足条件会报错退出；但首次 `external` 安装且没有残留限速状态或组件时，如果缺少 `CAP_NET_ADMIN` 或 `tc` 查询被拒，脚本会明确警告并继续安装，**不会实施所请求的限速**。请检查安装输出和 `node_output.txt` 中是否有 `NOT enforced` 警告。
-
-| 条件 | 说明 |
-| --- | --- |
-| 真实内核 | KVM / 独立服务器可以；OpenVZ、没有 `CAP_NET_ADMIN` 的 LXC 容器不行 |
-| 能读写 tc | `tc -j qdisc show` 要能成功。容器里 `CapEff` 显示有权限但实际被拒时，脚本会对 `external` 模式自动降级为「不限速 + 警告」，并提示 `WARNING: ... NOT enforced` |
-| systemd 或 OpenRC | 限速靠一个开机恢复的 service 维持，两者都没有的容器无法使用 |
-| 机内无第三方 NAT 规则 | 只在 `local` 端口跳跃模式下要求：有 Docker 或商家写的 NAT 链会拒绝接管 |
-
-**建议**：先用 `ENABLE_VPS_SHAPING=0`（或不写）把节点装好、验证能连，确认机器满足上表后再重装并加上 `ENABLE_VPS_SHAPING=1 VPS_UPLOAD_MBIT=100`。上面所有商家 NAT 示例都刻意没有写限速。
-
-- 已开启后重装：省略开关会沿用原设置；写 `ENABLE_VPS_SHAPING=0` 明确关闭。
-- **首次安装时没写 `ENABLE_VPS_SHAPING=1` 且用的是 `external` 模式，之后想开限速必须带 `ENABLE_VPS_SHAPING=1` 重装一次**（`hy2-limit set` 需要已存在限速状态文件）。`local` 模式不受此限。
-- 已开启后不重装调速，不换凭据：
-
-```sh
-hy2-limit status        # 查看设置和规则状态
-hy2-limit set 100       # 改速为 100 Mbps，端口和跳跃设置不变
-hy2-limit off           # 只关闭限速，本机跳跃转发保留
-hy2-limit disable-all   # 关闭限速和本机跳跃；切到 reality / ss 前执行
-```
+本机转发使用独立的 `hy2-hop` 辅助程序和开机恢复服务，不操作网卡队列。若检测到旧版网络集成状态，脚本会停止并提示人工检查，不会自动删除已有规则。切换已安装的本机转发模式前同样需要人工检查。当前拆分版本仅完成语法与配置生成测试，尚未完成 Linux 实机端到端验证。
 
 ## 安装后
 
@@ -263,7 +230,7 @@ closepwd
 - HY2 默认 Gecko 混淆，客户端不支持时在命令里加 `HY2_OBFS=salamander` 并用新配置。证书为自签并内嵌客户端，无需域名或 Cloudflare API。证书有效期 36 个月，同 SNI 重装会复用（读取 SAN/CN、有效期和公私钥匹配校验），替换下来的旧证书留在 `/etc/sing-box/hy2-tls/` 下。
 - 已装 sing-box 低于 **1.12.0** 时脚本会自动换成最新版：生成的客户端配置用的是 1.12 起的 DNS/route 写法，旧内核会校验失败。不想自动升级就先自己升到 1.12 以上。
 - 已存在的 `/etc/systemd/system/sing-box.service` 在覆盖前会备份成 `sing-box.service.pre-installer`（只备份一次，不覆盖已有备份）。
-- 网卡自动识别失败时按提示指定真实网卡，例如 `HY2_HOPPING_INTERFACE=ens3`（跳跃）或 `VPS_SHAPING_INTERFACE=ens3`（限速）；`ens3` 只是示例。
+- 本机跳跃的网卡自动识别失败时，指定真实网卡，例如 `HY2_HOPPING_INTERFACE=ens3`。本机转发需要 nftables、CAP_NET_ADMIN 和 systemd/OpenRC；external 模式不创建转发。
 - 云安全组需自行放行；不要为安装删除已有网络规则或 SSH 端口映射。
-- 修改跳跃范围或 `local`/`external` 前先断开客户端，等旧连接失效后再改，否则旧连接可能沿用旧转发；仅调速不受影响。
-- 限速保护无法安全恢复时可能停止整个 sing-box，`both` 的 REALITY 也会停。新功能只经过模拟测试，尚未在真实 Linux VPS 验证连通性和吞吐，请先在可救援机器上测试。
+- 修改跳跃范围或 `local`/`external` 前先断开客户端，等旧连接失效后再改，否则旧连接可能沿用旧转发。
+- 本机端口跳跃的转发仍需在可救援的 Linux VPS 上测试连通性；不要删除已有第三方网络规则。
