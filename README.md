@@ -246,6 +246,18 @@ cat /etc/sing-box/node_output.txt
 
 也可以重新登录后执行 `shownode`。完整手机配置在 `/etc/sing-box/client.json`；`both` 模式另有 `client-reality.json`、`client-hy2.json`。这些文件包含密码，不要公开。
 
+## 手动关闭 SSH 密码登录
+
+安装脚本不会自动关闭 SSH 密码登录。先保存 `sshkey` 显示的私钥，确认在另一个窗口可以使用该私钥成功登录，并保留当前会话和服务商救援控制台；随后以 root 执行：
+
+```sh
+closepwd
+```
+
+阅读提示并输入 `CLOSE` 确认后，命令尝试关闭 `PasswordAuthentication` 和 `KbdInteractiveAuthentication`，备份 SSH 主配置并重启 SSH；失败时尝试恢复。备份路径会在输出中显示。取消确认不会修改配置。若未启用公钥认证、配置检查失败或检测到 `Match` 条件规则（包括包含文件中的规则），命令拒绝操作，需人工处理。
+
+该功能经过模拟和 Windows OpenSSH 独立测试，**尚未在 Linux VPS 上完成端到端验证**；`Match` 检测依赖 OpenSSH 调试输出，不保证适配所有版本。请先在可救援的机器测试，执行后保持原会话打开，再用另一窗口验证密钥登录和密码登录状态。
+
 ## 注意事项
 
 - HY2 默认 Gecko 混淆，客户端不支持时在命令里加 `HY2_OBFS=salamander` 并用新配置。证书为自签并内嵌客户端，无需域名或 Cloudflare API。证书有效期 36 个月，同 SNI 重装会复用（读取 SAN/CN、有效期和公私钥匹配校验），替换下来的旧证书留在 `/etc/sing-box/hy2-tls/` 下。

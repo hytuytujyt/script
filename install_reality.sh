@@ -694,6 +694,59 @@ setup_ssh_key() {
 }
 
 setup_alias() {
+  cat > /usr/local/bin/closepwd <<'CLOSEPWD'
+#!/bin/bash
+# Explicit opt-in only. Keep the current SSH session open throughout.
+set -euo pipefail
+[[ $(id -u) == 0 ]] || { echo 'Run closepwd as root.' >&2; exit 1; }
+conf=/etc/ssh/sshd_config
+[[ -f "$conf" && ! -L "$conf" ]] || { echo 'Missing or symlinked sshd_config; refusing changes.' >&2; exit 1; }
+command -v sshd >/dev/null || { echo 'sshd not found.' >&2; exit 1; }
+sshd -t -f "$conf" || exit 1
+# sshd -T -C evaluates Match for the actual SSH connection. Refuse all
+# configured Match blocks (including Includes) rather than claiming that a
+# global setting closes password access for every user/address.
+debug=$(sshd -T -ddd -f "$conf" 2>&1) || { echo 'Cannot inspect SSH configuration.' >&2; exit 1; }
+if grep -Eiq 'checking (syntax for .match|match for)' <<< "$debug"; then
+  echo 'SSH configuration contains Match rules; refusing automatic modification. Review all included files manually.' >&2
+  exit 1
+fi
+effective=$(sshd -T -f "$conf") || exit 1
+[[ $(awk '$1=="pubkeyauthentication" {print $2; exit}' <<< "$effective") == yes ]] || { echo 'Public key authentication is not enabled; refusing.' >&2; exit 1; }
+echo 'Only continue after independently verifying a NEW SSH login with your private key.'
+echo 'Keep this session open. This changes SSH authentication for the server.'
+read -r -p 'Type CLOSE to continue: ' confirm
+[[ "$confirm" == CLOSE ]] || { echo 'Cancelled; no changes made.'; exit 1; }
+backup=$(mktemp -d /etc/ssh/closepwd-backup.XXXXXX)
+chmod 700 "$backup"
+cp -p "$conf" "$backup/sshd_config"
+tmp=$(mktemp /etc/ssh/.closepwd.XXXXXX)
+restart_ssh() {
+  if command -v systemctl >/dev/null && [[ -d /run/systemd/system ]]; then
+    systemctl restart ssh || systemctl restart sshd
+  elif command -v rc-service >/dev/null; then rc-service sshd restart || rc-service ssh restart
+  elif command -v service >/dev/null; then service ssh restart || service sshd restart
+  else return 1; fi
+}
+rollback() {
+  echo "Failed; restoring SSH configuration from $backup. Keep this session open." >&2
+  cp -p "$backup/sshd_config" "$conf" || { echo 'CRITICAL: restore failed; repair SSH manually.' >&2; return 1; }
+  sshd -t -f "$conf" && restart_ssh || { echo 'CRITICAL: could not verify or restart restored SSH; repair manually.' >&2; return 1; }
+}
+# Put global settings first, before any Include or Match. Preserve existing content.
+{ printf '%s\n' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no'; cat "$conf"; } > "$tmp"
+if ! cat "$tmp" > "$conf"; then rm -f "$tmp"; rollback || true; exit 1; fi
+rm -f "$tmp"
+if ! sshd -t -f "$conf"; then rollback || true; exit 1; fi
+effective=$(sshd -T -f "$conf") || { rollback || true; exit 1; }
+if [[ $(awk '$1=="passwordauthentication" {print $2; exit}' <<< "$effective") != no || $(awk '$1=="kbdinteractiveauthentication" {print $2; exit}' <<< "$effective") != no || $(awk '$1=="pubkeyauthentication" {print $2; exit}' <<< "$effective") != yes ]]; then
+  echo 'Effective global SSH settings failed verification.' >&2; rollback || true; exit 1
+fi
+if ! restart_ssh; then rollback || true; exit 1; fi
+echo "SSH restarted; backup: $backup/sshd_config"
+echo 'Global defaults verified. Match blocks may override them: verify your actual connection with sshd -T -C and test a new login before closing this session.'
+CLOSEPWD
+  chmod 700 /usr/local/bin/closepwd
   cat > /usr/local/bin/sshkey <<'EOF'
 #!/bin/sh
 KEY=/root/.ssh/id_ed25519
