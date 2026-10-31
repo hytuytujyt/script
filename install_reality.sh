@@ -809,6 +809,17 @@ hop_load() {
   else jq -e '.mode=="external" and (.ports|type=="array" and length==0) and ((.iface // "")=="")' <<< "$HOP" >/dev/null || { err 'Invalid external hopping state'; return 1; }; fi
 }
 
+# Normalize only a redundant UDP equality when the SAME rule already
+# contains a UDP destination-port match. All other objects remain significant.
+nat_canonical() {
+  jq -Sc '
+    map(if has("rule") then
+      .rule.expr |= (
+        if any(.[]; .match.left.payload.protocol?=="udp" and .match.left.payload.field?=="dport") then
+          map(select(. != {match:{op:"==",left:{meta:{key:"l4proto"}},right:"udp"}}))
+        else . end)
+    else . end)'
+}
 nat_expected() {
   jq -Scn --arg t "$TABLE" --argjson hop "$HOP" --argjson p "$PORT" '
     if $hop.mode!="local" then [] else
@@ -819,19 +830,19 @@ nat_expected() {
       {match:{op:"==",left:{fib:{result:"type",flags:["daddr"]}},right:"local"}},
       {match:{op:"==",left:{meta:{key:"l4proto"}},right:"udp"}},
       {match:{op:"==",left:{payload:{protocol:"udp",field:"dport"}},right:(if .[0]==.[1] then .[0] else {range:.} end)}},
-      {redirect:{port:$p}}]}}] end'
+      {redirect:{port:$p}}]}}] end' | nat_canonical
 }
 nat_snapshot() {
   local rules
   rules=$(nft -j list ruleset) || { err 'Cannot inspect nftables/CAP_NET_ADMIN'; return 1; }
-  jq -Sce --arg t "$TABLE" '[.nftables[] | select(to_entries|any(.[]; .value.family=="inet" and (.value.table==$t or (.key=="table" and .value.name==$t)))) | walk(if type=="object" then del(.handle,.index) else . end)]' <<< "$rules"
+  jq -Sce --arg t "$TABLE" '[.nftables[] | select(to_entries|any(.[]; .value.family=="inet" and (.value.table==$t or (.key=="table" and .value.name==$t)))) | walk(if type=="object" then del(.handle,.index) else . end)]' <<< "$rules" | nat_canonical
 }
 nat_owned() {
   local actual
   actual=$(nat_snapshot) || return 1
   if [[ -e "$NAT_STATE" || -L "$NAT_STATE" ]]; then
     secure "$NAT_STATE" 600 || return 1
-    [[ "$actual" == '[]' || "$actual" == "${NAT_MEMORY:-}" || "$actual" == "$(jq -Sc . "$NAT_STATE")" ]] || { err 'Unknown/modified HY2 nft table: refusing replacement'; return 1; }
+    [[ "$actual" == '[]' || "$actual" == "${NAT_MEMORY:-}" || "$actual" == "$(nat_canonical < "$NAT_STATE")" ]] || { err 'Unknown/modified HY2 nft table: refusing replacement'; return 1; }
     # A missing table may be a reboot; a nonempty table needs the complete saved fingerprint.
   else [[ "$actual" == '[]' ]] || { err 'Foreign same-name nft table; no ownership fingerprint'; return 1; }; fi
 }
