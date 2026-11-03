@@ -27,13 +27,13 @@ curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/install_real
 ## REALITY
 
 ```sh
-MODE=reality SERVER_IP=203.0.113.10 ACTUAL_LISTEN_PORT=20116 LISTEN_PORT=20116 sh /tmp/install_reality.sh
+MODE=reality SERVER_IP=x.x.x.x ACTUAL_LISTEN_PORT=443 LISTEN_PORT=30116 sh /tmp/install_reality.sh
 ```
 
 ## Shadowsocks
 
 ```sh
-MODE=ss SERVER_IP=203.0.113.10 ACTUAL_LISTEN_PORT=20116 LISTEN_PORT=20116 sh /tmp/install_reality.sh
+MODE=ss SERVER_IP=x.x.x.x ACTUAL_LISTEN_PORT=443 LISTEN_PORT=30116 sh /tmp/install_reality.sh
 ```
 
 ## HY2
