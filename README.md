@@ -110,7 +110,7 @@ cat /etc/sing-box/node_output.txt
 
 ## 低流量 VPS 对比测试（独立工具）
 
-`tcpquality-gd/` 是与节点安装器分开的 TcpQuality 专用副本，只测广东电信、移动 IPv4 普通/大包回程，以及 VPS → 广东的单线程下载；不测联通、IPv6、上传、其他地区、教育网、国际互联或 Apple CDN。每轮的单线程下载总预算可设置为 16–1024 MiB（偶数，电信与移动均分），默认 128 MiB/轮；每次下载另有 10 秒超时，因此实际通常更少。两轮下载载荷最多为单轮预算的两倍。依赖安装、协议开销、其他 VPS 流量和商家计费口径不包含在这个载荷上限内，所以这不是全机流量硬限制或计费保证。
+`tcpquality-gd/` 是与节点安装器分开的 TcpQuality 专用副本，只测广东电信、移动 IPv4 普通/大包回程，以及 VPS → 广东的单线程下载；不测联通、IPv6、上传、其他地区、教育网、国际互联或 Apple CDN。单线程下载总预算按**基线与调优后两轮合计**设置，范围 32–2048 MiB（4 的倍数），默认 128 MiB；四个下载平均分配，每次另有 10 秒超时，因此实际通常更少。工具安装、协议开销、其他 VPS 流量和商家计费口径不包含在 payload 预算内，所以不是全机流量硬限制或计费保证。
 
 **脚本会自动准备依赖**：首次运行时检查系统工具，支持 Debian/Ubuntu 和 Alpine；缺少时会先列出要安装/下载的项目并询问确认，然后安装系统依赖、NextTrace Tiny、tcpfit v0.5.9，并下载及校验 TcpQuality core 和 tcpfit 的 SHA256。缺少大包回程所需工具时不会静默跳过。依赖安装本身也会消耗流量，请在确认前考虑退款额度。需要 Bash、root 权限和网络连接。
 
@@ -121,10 +121,10 @@ cat /etc/sing-box/node_output.txt
 curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/tcpquality-gd/run.sh -o /root/tq-gd.sh
 chmod 700 /root/tq-gd.sh
 
-# 自动安装缺少的依赖/工具；交互设置单轮下载预算（默认128MiB，电信+移动合计）
+# 自动安装缺少的依赖/工具；交互设置基线+调优后两轮的总预算（默认128MiB）
 /root/tq-gd.sh baseline
-# 也可直接指定预算，例如64MiB总量（每个运营商最多32MiB）
-# /root/tq-gd.sh baseline 64
+# 也可直接指定两轮总预算，例如512MiB：四个下载各最多128MiB
+# /root/tq-gd.sh baseline 512
 
 # 只做基础调优：带宽填套餐已知 Mbps 数值，例如 200；不运行 iperf 测速或拐点扫描
 /root/tq-gd.sh tune 200
@@ -134,7 +134,7 @@ chmod 700 /root/tq-gd.sh
 /root/tq-gd.sh compare
 ```
 
-`baseline` 会交互询问单轮单线程下载总预算，默认 128 MiB，范围 16–1024 MiB 且必须为偶数；也可用 `baseline 64` 或 `TQ_SPEEDTEST_BUDGET_MIB=64` 指定。基线保存后，`after` 自动沿用相同预算，保证前后一致。预算只限制两项单线程下载载荷，不包含路由探测、工具安装、协议开销或其他后台流量。脚本会在最后显示基线测试、tcpfit 调优、调优后测试及准备工具阶段的网卡 RX+TX 计数和合计；该计数含并发流量，不能等同商家账单。
+`baseline` 会交互询问基线+调优后两轮的单线程下载总预算，默认 128 MiB，范围 32–2048 MiB 且必须为 4 的倍数；也可用 `baseline 512` 或 `TQ_SPEEDTEST_BUDGET_MIB=512` 指定。预算四等分到四次下载：例如 128 MiB 总预算即每次最多 32 MiB；512 MiB 总预算即每次最多 128 MiB。`after` 自动复用该预算。预算只限制四个单线程下载对象，不包含路由探测、工具安装、协议开销或其他后台流量。脚本会在最后显示基线测试、tcpfit 调优、调优后测试及准备工具阶段的网卡 RX+TX 计数和合计；该计数含并发流量，不能等同商家账单。
 
 首次运行会询问是否安装缺少的工具；拒绝安装时不会开始测试。`tune 200` 会使用 proxy 角色执行 `tcpfit tune --role proxy --bw 200`；数字必须换成该 VPS 的实际已知带宽，不能留空或写 `auto`。若已有 tcpfit，脚本沿用已有版本；没有时会安装经过 SHA256 校验的官方 v0.5.9 到 `/usr/local/bin/tcpfit`。不需要再手工进入菜单，也不要选一键调优或 sweep。
 

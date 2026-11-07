@@ -19,8 +19,8 @@ usage() {
 广东电信/移动低流量前后对比
 
 用法（root）：
-  $0 baseline [MiB] 自动准备依赖并设置每轮下载总预算，然后做调优前测试
-                    默认 128 MiB/轮（电信+移动合计）；可设 16-1024 的偶数
+  $0 baseline [MiB] 自动准备依赖并设置两轮测试总预算，然后做调优前测试
+                    默认 128 MiB（基线+调优后合计）；可设 32-2048 的4倍数
   $0 tune <Mbps>    只做 tcpfit 基础调优，例如：$0 tune 200
   $0 after          调优后测试（要求已有 baseline 和 tune 记录）
   $0 compare        对比已保存的两轮报告
@@ -29,7 +29,7 @@ usage() {
 
 测试范围固定：广东电信/移动 IPv4 普通回程、大包回程、VPS→广东单线程下载。
 不测联通、IPv6、上传、其他地区、教育网、国际互联、Apple CDN，也不上传报告。
-每轮单线程下载预算可设 16-1024 MiB（电信+移动合计，必须为偶数），默认 128 MiB/轮；每次另有 10 秒超时。此载荷预算不包含工具安装、协议开销或其他并发流量。
+单线程下载总预算可设 32-2048 MiB（基线+调优后两轮合计，必须为4的倍数），默认 128 MiB；四次下载均分，每次另有 10 秒超时。此载荷预算不包含工具安装、协议开销或其他并发流量。
 首次 baseline 会提示后自动安装缺少的系统依赖、NextTrace Tiny、TcpQuality core 与 tcpfit。
 EOF
 }
@@ -51,22 +51,23 @@ traffic_bytes() {
 choose_budget_mib() {
   local value="${1:-${TQ_SPEEDTEST_BUDGET_MIB:-}}"
   if [[ -z "$value" && -t 0 ]]; then
-    read -r -p '每轮单线程下载总预算 MiB（电信+移动合计，16-1024；默认 128）: ' value
+    read -r -p '基线+调优后两轮的单线程下载总预算 MiB（32-2048，4的倍数；默认 128）: ' value
   fi
   value=${value:-128}
-  [[ "$value" =~ ^[0-9]+$ ]] || fail '预算须为偶数 MiB 整数，范围 16-1024。'
-  (( value >= 16 && value <= 1024 && value % 2 == 0 )) || fail '预算须为偶数 MiB 整数，范围 16-1024。'
+  [[ "$value" =~ ^[0-9]+$ ]] || fail '总预算须为4的倍数 MiB 整数，范围 32-2048。'
+  (( value >= 32 && value <= 2048 && value % 4 == 0 )) || fail '总预算须为4的倍数 MiB 整数，范围 32-2048。'
   printf '%s\n' "$value"
 }
 
 compare_reports() {
   local before="$DATA_DIR/baseline.csv" after="$DATA_DIR/after.csv"
-  local budget t1 t2
-  budget=$(cat "$DATA_DIR/speedtest-budget-mib" 2>/dev/null || echo '未记录')
+  local budget t1 t2 per_run per_carrier
+  budget=$(cat "$DATA_DIR/comparison-budget-mib" 2>/dev/null || echo '未记录')
+  if [[ "$budget" =~ ^[0-9]+$ ]]; then per_run=$((budget / 2)); per_carrier=$((budget / 4)); else per_run='未记录'; per_carrier='未记录'; fi
   t1=$(cat "$DATA_DIR/baseline.time" 2>/dev/null || echo '未知')
   t2=$(cat "$DATA_DIR/after.time" 2>/dev/null || echo '未知')
   printf '╭──────── TcpQuality 调优前后对比（广东 IPv4）────────╮\n'
-  printf '  单轮下载预算：%s MiB（电信+移动合计）\n  基线：%s\n  调优后：%s\n' "$budget" "$t1" "$t2"
+  printf '  两轮下载总预算：%s MiB（每轮最多 %s MiB；每运营商每轮最多 %s MiB）\n  基线：%s\n  调优后：%s\n' "$budget" "$per_run" "$per_carrier" "$t1" "$t2"
   awk -F, -v f1="$before" -v f2="$after" '
     function numeric(v) { return v ~ /^-?[0-9]+([.][0-9]+)?$/ }
     function val(v) { return numeric(v) ? sprintf("%.1f", v+0) : (v=="" ? "无结果" : v) }
@@ -305,8 +306,8 @@ BUDGET_MIB=''
 if [[ "$MODE" == baseline ]]; then
   BUDGET_MIB=$(choose_budget_mib "$ARG")
 elif [[ "$MODE" == after ]]; then
-  [[ -s "$DATA_DIR/speedtest-budget-mib" ]] || fail '缺少基线保存的流量预算；请保留同一份测试记录目录。'
-  BUDGET_MIB=$(<"$DATA_DIR/speedtest-budget-mib")
+  [[ -s "$DATA_DIR/comparison-budget-mib" ]] || fail '缺少基线保存的流量预算；请保留同一份测试记录目录。'
+  BUDGET_MIB=$(<"$DATA_DIR/comparison-budget-mib")
   BUDGET_MIB=$(choose_budget_mib "$BUDGET_MIB")
 fi
 prepare
@@ -315,8 +316,8 @@ chmod 700 "$DATA_DIR"
 
 if [[ "$MODE" == setup ]]; then exit 0; fi
 if [[ "$MODE" == baseline ]]; then
-  printf '%s\n' "$BUDGET_MIB" > "$DATA_DIR/speedtest-budget-mib"
-  chmod 600 "$DATA_DIR/speedtest-budget-mib"
+  printf '%s\n' "$BUDGET_MIB" > "$DATA_DIR/comparison-budget-mib"
+  chmod 600 "$DATA_DIR/comparison-budget-mib"
 fi
 
 if [[ "$MODE" == tune ]]; then
@@ -347,7 +348,8 @@ csv="$DATA_DIR/$MODE.csv"
 iface=$(ip route show default 2>/dev/null | awk 'NR==1 {print $5}' || true)
 before=$(traffic_bytes "$iface")
 stamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-PER_CARRIER_MIB=$((BUDGET_MIB / 2))
+RUN_BUDGET_MIB=$((BUDGET_MIB / 2))
+PER_CARRIER_MIB=$((BUDGET_MIB / 4))
 export TOS_PROBE_SIZE="${PER_CARRIER_MIB}MiB"
 export TOS_TIMEOUT=10
 export SPEEDTEST_APPLECDN_ENABLED=0
@@ -355,8 +357,8 @@ export TCPQUALITY_TCP_INFO=0
 export TCPQUALITY_RETRANS_TRACE=0
 
 printf '[%s] 开始广东电信/移动 IPv4 专项测试（%s）\n' "$stamp" "$MODE"
-printf '本轮单线程下载载荷预算：合计 %s MiB，电信/移动各最多 %s MiB；每次另有 10 秒超时。\n' "$BUDGET_MIB" "$PER_CARRIER_MIB"
-printf '两轮单线程下载载荷合计最多约 %s MiB；不含依赖安装、协议开销及其他流量。\n' "$((BUDGET_MIB * 2))"
+printf '基线+调优后两轮总预算：%s MiB；本轮最多 %s MiB，电信/移动各最多 %s MiB。\n' "$BUDGET_MIB" "$RUN_BUDGET_MIB" "$PER_CARRIER_MIB"
+printf '另有每次 10 秒超时；预算只限四个单线程下载对象，不含工具安装、协议开销及其他流量。\n'
 printf '默认网卡 RX+TX 计数包含其他并发流量。\n'
 if ! bash "$CORE" --gd-proxy-only --no-rank-upload >"$log" 2>&1; then
   printf '[!] TcpQuality 失败；日志：%s\n' "$log" >&2
@@ -370,7 +372,7 @@ after=$(traffic_bytes "$iface")
 bytes=$((after - before))
 (( bytes >= 0 )) || bytes=0
 printf '%s\n' "$stamp" > "$DATA_DIR/$MODE.time"
-printf 'interface=%s\nrx_tx_delta_bytes=%s\nspeedtest_budget_mib=%s\n' "${iface:-unknown}" "$bytes" "$BUDGET_MIB" > "$DATA_DIR/$MODE.traffic"
+printf 'interface=%s\nrx_tx_delta_bytes=%s\ncomparison_budget_mib=%s\n' "${iface:-unknown}" "$bytes" "$BUDGET_MIB" > "$DATA_DIR/$MODE.traffic"
 chmod 600 "$log" "$csv" "$DATA_DIR/$MODE.time" "$DATA_DIR/$MODE.traffic"
 printf '\n已保存 %s 结果：\n  %s\n  %s\n' "$MODE" "$log" "$csv"
 printf '测试期间网卡 RX+TX 增量：%s bytes（含其他并发流量）。\n' "$bytes"
