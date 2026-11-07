@@ -108,6 +108,36 @@ cat /etc/sing-box/node_output.txt
 
 重新登录后直接执行 `shownode` 效果相同。完整客户端配置在 `/etc/sing-box/client.json`，单协议配置为 `client-reality.json` / `client-ss.json` / `client-hy2.json`（按所选模式生成）。这些文件含密码，不要公开。
 
+## 低流量 VPS 对比测试（独立工具）
+
+`tcpquality-gd/` 是与节点安装器分开的 TcpQuality 专用副本：只测广东电信、移动 IPv4 普通/大包回程，以及 VPS → 广东的单线程下载；不测联通、IPv6、上传、其他地区、教育网、国际互联或 Apple CDN。每个运营商每轮最多下载 64 MiB，前后两轮测速载荷合计约 256 MiB（不含工具/依赖下载及少量协议开销）。不是商家计费硬保证；若 VPS 还在退款流量额度内，请先确认系统已有所需依赖，并避免同时跑其他流量。
+
+运行前需已有 `curl`、`ip`、`nstat`、`nping`、`traceroute`、`nexttrace-tiny` 和 `awk`；缺工具时脚本会先退出，不会自动下载依赖，也不会悄悄跳过大包测试。依赖安装流量不计入 256 MiB 测试载荷预算。
+
+以 root 运行，先做基线并保存记录：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/tcpquality-gd/run.sh -o /root/tq-gd.sh
+chmod 700 /root/tq-gd.sh
+/root/tq-gd.sh baseline
+```
+
+然后只运行 tcpfit 基础调优（不要选一键调优或拐点扫描），例如：
+
+```sh
+bash <(curl -fsSL https://raw.githubusercontent.com/Kylin010/tcpfit/main/tcpfit.sh)
+# 按菜单选择基础调优；带宽按商家标称/已知速率填写，不用 auto 探测。
+```
+
+或在已安装 tcpfit 后按其当前用法执行 `tcpfit tune --role proxy --bw <Mbps>`。基础调优完成后复测并查看前后 CSV：
+
+```sh
+/root/tq-gd.sh after
+/root/tq-gd.sh compare
+```
+
+日志和 CSV 默认保存在 `/root/tcpquality-gd-compare/`。基线和复测各只允许执行一次；确需重开一组时，先备份结果，再显式执行 `RESET=YES /root/tq-gd.sh reset`。如果调优后指标明显变差，可运行 `tcpfit rollback` 恢复 tcpfit 首次调优前保存的状态；回滚后的复测需另行决定，不会自动跑。
+
 ## 关闭 SSH 密码登录（可选，脚本不会自动做）
 
 先执行 `sshkey` 保存私钥，并在另一个窗口确认能用它登录，同时保留当前会话和服务商救援控制台。然后：
