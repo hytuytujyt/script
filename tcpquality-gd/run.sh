@@ -63,17 +63,30 @@ fi
 
 [[ "$(id -u)" == 0 ]] || { echo 'Run as root.' >&2; exit 1; }
 [[ -x "$(command -v bash)" ]] || { echo 'bash is required.' >&2; exit 1; }
-[[ -s "$CORE" ]] || { echo "Missing bundled TcpQuality core: $CORE" >&2; exit 1; }
 missing=()
-for cmd in curl ip nstat nping traceroute nexttrace-tiny awk; do
+for cmd in curl ip nstat nping traceroute nexttrace-tiny awk sha256sum; do
   command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
 done
 if ((${#missing[@]})); then
-  printf 'Missing required test tools: %s\\n' "${missing[*]}" >&2
+  printf 'Missing required test tools: %s\n' "${missing[*]}" >&2
   echo 'Install them before starting the baseline; this runner will not auto-install packages or silently skip large-packet testing.' >&2
   exit 1
 fi
-
+if [[ ! -s "$CORE" ]]; then
+  mkdir -p "$DATA_DIR"
+  chmod 700 "$DATA_DIR"
+  tmp_core="$DATA_DIR/runTcpQuality-core.sh.tmp"
+  core_url='https://raw.githubusercontent.com/hytuytujyt/script/ac6cda0b833836b5e746800e5b2a9c9f29169230/tcpquality-gd/runTcpQuality-core.sh'
+  curl -fsSL --retry 2 --connect-timeout 10 --max-time 60 "$core_url" -o "$tmp_core" || {
+    rm -f "$tmp_core"; echo 'Could not download the pinned TcpQuality core.' >&2; exit 1;
+  }
+  if ! printf '%s  %s\n' '0b3a2070ba7bd410304a7877b42d58d80cd467422c01b74d46f512cb0b9d6ee1' "$tmp_core" | sha256sum -c - >/dev/null 2>&1; then
+    rm -f "$tmp_core"; echo 'TcpQuality core checksum mismatch; refusing to run.' >&2; exit 1;
+  fi
+  mv -f "$tmp_core" "$DATA_DIR/runTcpQuality-core.sh"
+  chmod 600 "$DATA_DIR/runTcpQuality-core.sh"
+  CORE="$DATA_DIR/runTcpQuality-core.sh"
+fi
 if [[ "$MODE" == baseline ]]; then
   [[ ! -e "$DATA_DIR/baseline.csv" ]] || {
     echo "Baseline already exists at $DATA_DIR/baseline.csv; preserve it or use RESET=YES $0 reset to start over." >&2; exit 1;
