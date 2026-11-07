@@ -110,11 +110,11 @@ cat /etc/sing-box/node_output.txt
 
 ## 低流量 VPS 对比测试（独立工具）
 
-`tcpquality-gd/` 是与节点安装器分开的 TcpQuality 专用副本：只测广东电信、移动 IPv4 普通/大包回程，以及 VPS → 广东的单线程下载；不测联通、IPv6、上传、其他地区、教育网、国际互联或 Apple CDN。每个运营商每轮最多下载 64 MiB，前后两轮测速载荷合计约 256 MiB（不含工具/依赖下载及少量协议开销）。不是商家计费硬保证；若 VPS 还在退款流量额度内，请先确认系统已有所需依赖，并避免同时跑其他流量。
+`tcpquality-gd/` 是与节点安装器分开的 TcpQuality 专用副本：只测广东电信、移动 IPv4 普通/大包回程，以及 VPS → 广东的单线程下载；不测联通、IPv6、上传、其他地区、教育网、国际互联或 Apple CDN。每个运营商每轮下载最多 64 MiB，前后两轮单线程下载载荷最多约 256 MiB；默认每次下载还有 10 秒超时，因此实际通常更少。依赖下载、协议开销、其他 VPS 流量及商家计费口径不包含在这个理论载荷上限内，不是计费硬保证。
 
-运行前需已有 `curl`、`ip`、`nstat`、`nping`、`traceroute`、`nexttrace-tiny` 和 `awk`；缺工具时脚本会先退出，不会自动下载依赖，也不会悄悄跳过大包测试。依赖安装流量不计入 256 MiB 测试载荷预算。
+运行前需已有 `curl`、`ip`、`nstat`、`nping`、`traceroute`、`nexttrace-tiny`、`awk` 和 `sha256sum`；缺工具时脚本会先退出，不会自动安装依赖，也不会悄悄跳过大包测试。Debian/Ubuntu 可先运行 `apt-get update && apt-get install -y nmap traceroute iproute2 curl`；NextTrace Tiny 官方安装命令为 `curl -fsSL https://nxtrace.org/nt | bash -s -- --flavor tiny`。依赖安装流量应另行计入退款额度。
 
-以 root 运行，先做基线并保存记录：
+以 root 运行，先做基线并保存记录。运行脚本会自动下载并校验配套 TcpQuality core：
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/tcpquality-gd/run.sh -o /root/tq-gd.sh
@@ -122,21 +122,20 @@ chmod 700 /root/tq-gd.sh
 /root/tq-gd.sh baseline
 ```
 
-然后只运行 tcpfit 基础调优（不要选一键调优或拐点扫描），例如：
+然后只运行 tcpfit 基础调优。若 `tcpfit` 命令不存在，首次执行官方脚本进入菜单：选 `2`（基础调优），用途选 `1`（代理/加速，或直接回车），带宽填 VPS 已知套餐带宽数值（例如 `200`），不要留空自动探测。调优结束按任意键返回菜单，再选 `0` 退出。不要选 `1` 一键调优或 `3` 拐点测试：
 
 ```sh
 bash <(curl -fsSL https://raw.githubusercontent.com/Kylin010/tcpfit/main/tcpfit.sh)
-# 按菜单选择基础调优；带宽按商家标称/已知速率填写，不用 auto 探测。
 ```
 
-或在已安装 tcpfit 后按其当前用法执行 `tcpfit tune --role proxy --bw <Mbps>`。基础调优完成后复测并查看前后 CSV：
+已安装 tcpfit 时可直接用 `tcpfit tune --role proxy --bw <Mbps>`。只有在完成基础调优后，再运行同范围复测及比较：
 
 ```sh
 /root/tq-gd.sh after
 /root/tq-gd.sh compare
 ```
 
-日志和 CSV 默认保存在 `/root/tcpquality-gd-compare/`。基线和复测各只允许执行一次；确需重开一组时，先备份结果，再显式执行 `RESET=YES /root/tq-gd.sh reset`。如果调优后指标明显变差，可运行 `tcpfit rollback` 恢复 tcpfit 首次调优前保存的状态；回滚后的复测需另行决定，不会自动跑。
+日志和 CSV 默认保存在 `/root/tcpquality-gd-compare/`。基线和复测各只允许执行一次；确需重开一组时，先备份结果，再显式执行 `RESET=YES /root/tq-gd.sh reset`。如果调优后指标明显变差，可运行 `tcpfit rollback` 恢复首次调优前保存的状态。拐点扫描可能消耗 GB 级流量；以 tcpfit 当前版本给出的预估为准，在退款流量额度紧张时跳过扫描。
 
 ## 关闭 SSH 密码登录（可选，脚本不会自动做）
 
