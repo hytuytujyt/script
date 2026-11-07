@@ -19,7 +19,8 @@ usage() {
 广东电信/移动低流量前后对比
 
 用法（root）：
-  $0 baseline       自动准备依赖与 tcpfit，然后做调优前测试
+  $0 baseline [MiB] 自动准备依赖并设置每轮下载总预算，然后做调优前测试
+                    默认 128 MiB/轮（电信+移动合计）；可设 16-1024 的偶数
   $0 tune <Mbps>    只做 tcpfit 基础调优，例如：$0 tune 200
   $0 after          调优后测试（要求已有 baseline 和 tune 记录）
   $0 compare        对比已保存的两轮报告
@@ -28,7 +29,7 @@ usage() {
 
 测试范围固定：广东电信/移动 IPv4 普通回程、大包回程、VPS→广东单线程下载。
 不测联通、IPv6、上传、其他地区、教育网、国际互联、Apple CDN，也不上传报告。
-单线程下载最多 64 MiB/运营商/轮；每次还设 10 秒超时。依赖安装和其他流量不计入此载荷上限。
+每轮单线程下载预算可设 16-1024 MiB（电信+移动合计，必须为偶数），默认 128 MiB/轮；每次另有 10 秒超时。此载荷预算不包含工具安装、协议开销或其他并发流量。
 首次 baseline 会提示后自动安装缺少的系统依赖、NextTrace Tiny、TcpQuality core 与 tcpfit。
 EOF
 }
@@ -45,6 +46,107 @@ traffic_bytes() {
   [[ "$rx" =~ ^[0-9]+$ ]] || rx=0
   [[ "$tx" =~ ^[0-9]+$ ]] || tx=0
   printf '%s\n' "$((rx + tx))"
+}
+
+choose_budget_mib() {
+  local value="${1:-${TQ_SPEEDTEST_BUDGET_MIB:-}}"
+  if [[ -z "$value" && -t 0 ]]; then
+    read -r -p '每轮单线程下载总预算 MiB（电信+移动合计，16-1024；默认 128）: ' value
+  fi
+  value=${value:-128}
+  [[ "$value" =~ ^[0-9]+$ ]] || fail '预算须为偶数 MiB 整数，范围 16-1024。'
+  (( value >= 16 && value <= 1024 && value % 2 == 0 )) || fail '预算须为偶数 MiB 整数，范围 16-1024。'
+  printf '%s\n' "$value"
+}
+
+compare_reports() {
+  local before="$DATA_DIR/baseline.csv" after="$DATA_DIR/after.csv"
+  local budget t1 t2
+  budget=$(cat "$DATA_DIR/speedtest-budget-mib" 2>/dev/null || echo '未记录')
+  t1=$(cat "$DATA_DIR/baseline.time" 2>/dev/null || echo '未知')
+  t2=$(cat "$DATA_DIR/after.time" 2>/dev/null || echo '未知')
+  printf '╭──────── TcpQuality 调优前后对比（广东 IPv4）────────╮\n'
+  printf '  单轮下载预算：%s MiB（电信+移动合计）\n  基线：%s\n  调优后：%s\n' "$budget" "$t1" "$t2"
+  awk -F, -v f1="$before" -v f2="$after" '
+    function numeric(v) { return v ~ /^-?[0-9]+([.][0-9]+)?$/ }
+    function val(v) { return numeric(v) ? sprintf("%.1f", v+0) : (v=="" ? "无结果" : v) }
+    function diff(a,b) { return numeric(a) && numeric(b) ? sprintf("%+.1f", (b+0)-(a+0)) : "—" }
+    function pct(a,b) { return numeric(a) && numeric(b) && (a+0)!=0 ? sprintf("%+.0f%%", ((b-a)/a)*100) : "—" }
+    FILENAME==f1 { stage=1 }
+    FILENAME==f2 { stage=2 }
+    {
+      if (($1=="三网" && $2=="IPv4") || ($1=="IPv4大包" && $2=="IPv4")) {
+        isp=$4
+        if (isp=="电信" || isp=="移动") {
+          kind=($1=="三网" ? "normal" : "large")
+          lat[kind,stage,isp]=$11; loss[kind,stage,isp]=$10; route[kind,stage,isp]=$12
+        }
+      }
+      if ($1=="三网单线程速度" && $2=="广东" && ($3=="电信" || $3=="移动")) {
+        speed[stage,$3]=$10
+        speed_status[stage,$3]=$7
+      }
+    }
+    END {
+      for (i=1; i<=2; i++) {
+        isp=(i==1 ? "电信" : "移动")
+        printf "\n【广东%s】\n", isp
+        for (k=1; k<=2; k++) {
+          kind=(k==1 ? "normal" : "large")
+          label=(k==1 ? "普通回程" : "大包回程")
+          a=lat[kind,1,isp]; b=lat[kind,2,isp]
+          al=loss[kind,1,isp]; bl=loss[kind,2,isp]
+          ar=route[kind,1,isp]; br=route[kind,2,isp]
+          printf "  %s：延迟 %s → %s ms（变化 %s ms），丢包 %s%% → %s%%\n", label, val(a), val(b), diff(a,b), val(al), val(bl)
+          printf "    线路：%s → %s\n", (ar==""?"无":ar), (br==""?"无":br)
+        }
+        a=speed[1,isp]; b=speed[2,isp]
+        if (speed_status[1,isp]!="OK") a="失败"
+        if (speed_status[2,isp]!="OK") b="失败"
+        printf "  单线程下载 %s → %s Mbps（%s）\n", val(a), val(b), pct(a,b)
+      }
+      print "\n注：单线程百分比按调优前为基准；网卡 RX+TX 与商家计费口径可能不同。"
+    }
+  ' "$before" "$after"
+  printf '╰────────────────────────────────────────────────────────╯\n'
+}
+
+traffic_value() {
+  [[ -s "$1" ]] || return 0
+  awk -F= '$1=="rx_tx_delta_bytes" && $2 ~ /^[0-9]+$/ {print $2; found=1; exit} END{if(!found) exit 1}' "$1" 2>/dev/null || true
+}
+
+format_bytes() {
+  local b="${1:-}"
+  [[ "$b" =~ ^[0-9]+$ ]] || { printf '未记录'; return; }
+  awk -v b="$b" 'BEGIN {if (b>=1073741824) printf "%.2f GiB", b/1073741824; else if (b>=1048576) printf "%.1f MiB", b/1048576; else if (b>=1024) printf "%.1f KiB", b/1024; else printf "%d B", b}'
+}
+
+print_traffic_summary() {
+  local setup baseline tune after total measured iface
+  setup=$(traffic_value "$DATA_DIR/setup.traffic")
+  baseline=$(traffic_value "$DATA_DIR/baseline.traffic")
+  tune=$(traffic_value "$DATA_DIR/tune.traffic")
+  after=$(traffic_value "$DATA_DIR/after.traffic")
+  iface=$(awk -F= '$1=="interface"{print $2; exit}' "$DATA_DIR/after.traffic" 2>/dev/null || true)
+  printf '\n====== 流量估算（网卡 RX+TX，非商家账单）======\n'
+  printf '工具/依赖准备：  %s\n' "$(format_bytes "$setup")"
+  printf '调优前测试：    %s\n' "$(format_bytes "$baseline")"
+  printf 'tcpfit 基础调优：%s\n' "$(format_bytes "$tune")"
+  printf '调优后测试：    %s\n' "$(format_bytes "$after")"
+  if [[ "$baseline" =~ ^[0-9]+$ && "$tune" =~ ^[0-9]+$ && "$after" =~ ^[0-9]+$ ]]; then
+    total=$((baseline + tune + after))
+    printf '两次测试+调优： %s\n' "$(format_bytes "$total")"
+    if [[ "$setup" =~ ^[0-9]+$ ]]; then
+      measured=$((total + setup))
+      printf '含工具准备合计：%s\n' "$(format_bytes "$measured")"
+    else
+      printf '含工具准备合计：未完整记录\n'
+    fi
+  else
+    printf '两次测试+调优：部分阶段未记录，无法准确合计\n'
+  fi
+  printf '计数网卡：%s；各阶段都可能包含该阶段其他并发流量。商家计费口径可能不同。\n' "${iface:-默认网卡}"
 }
 
 os_id() {
@@ -136,14 +238,20 @@ install_core() {
 }
 
 prepare() {
-  local id missing need_tcpfit=0 need_core=0
+  local id missing need_tcpfit=0 need_core=0 setup_iface='' setup_before='' setup_after setup_delta
   require_root
+  mkdir -p "$DATA_DIR"
+  chmod 700 "$DATA_DIR"
   id=$(os_id) || fail '无法读取 /etc/os-release。'
   missing=$(missing_tools || true)
   command -v tcpfit >/dev/null 2>&1 || need_tcpfit=1
   [[ -s "$CORE" || -s "$DATA_DIR/runTcpQuality-core.sh" ]] || need_core=1
   if [[ -n "$missing" || ! -x "$(command -v nexttrace-tiny 2>/dev/null || true)" || "$need_tcpfit" == 1 || "$need_core" == 1 ]]; then
     confirm_setup "$missing$([[ -x "$(command -v nexttrace-tiny 2>/dev/null || true)" ]] || printf '\nnexttrace-tiny')" "$need_tcpfit" "$need_core"
+  fi
+  if [[ ( "$MODE" == baseline || "$MODE" == setup ) && ! -e "$DATA_DIR/setup.traffic" ]]; then
+    setup_iface=$(ip route show default 2>/dev/null | awk 'NR==1 {print $5}' || true)
+    setup_before=$(traffic_bytes "$setup_iface")
   fi
   install_system_deps "$id" "$missing"
   local still_missing
@@ -152,6 +260,13 @@ prepare() {
   install_nexttrace_tiny || fail '安装 NextTrace Tiny 失败；需要可执行命令 nexttrace-tiny。'
   install_tcpfit || fail '安装 tcpfit 失败。'
   if [[ -s "$DATA_DIR/runTcpQuality-core.sh" ]]; then CORE="$DATA_DIR/runTcpQuality-core.sh"; else install_core; fi
+  if [[ -n "$setup_before" ]]; then
+    setup_after=$(traffic_bytes "$setup_iface")
+    setup_delta=$((setup_after - setup_before))
+    (( setup_delta >= 0 )) || setup_delta=0
+    printf 'interface=%s\nrx_tx_delta_bytes=%s\n' "${setup_iface:-unknown}" "$setup_delta" > "$DATA_DIR/setup.traffic"
+    chmod 600 "$DATA_DIR/setup.traffic"
+  fi
   printf '[OK] 系统依赖、NextTrace Tiny、tcpfit 和 TcpQuality core 已就绪。\n'
 }
 
@@ -165,11 +280,9 @@ case "$MODE" in
     ;;
   compare)
     [[ -s "$DATA_DIR/baseline.csv" && -s "$DATA_DIR/after.csv" ]] || fail "缺少 baseline/after CSV；记录目录：$DATA_DIR"
-    for stage in baseline after; do
-      printf '\n===== %s：%s =====\n' "$stage" "$(cat "$DATA_DIR/$stage.time" 2>/dev/null || echo 未知)"
-      awk -F, '/^三网,IPv4,广东,(电信|移动),/ || /^IPv4大包,IPv4,广东,(电信|移动),/ || /^三网单线程速度,广东,(电信|移动),/ {print}' "$DATA_DIR/$stage.csv" || true
-    done
-    printf '\n完整日志和 CSV：%s\n' "$DATA_DIR"
+    compare_reports
+    print_traffic_summary
+    printf '\n原始报告：%s\n' "$DATA_DIR"
     exit 0
     ;;
   baseline|after|setup|tune) ;;
@@ -188,22 +301,44 @@ elif [[ "$MODE" == after ]]; then
   [[ -s "$DATA_DIR/tune.done" ]] || fail "请先运行本脚本的 tune <Mbps>；确保基础调优完成后才复测。"
   [[ ! -e "$DATA_DIR/after.csv" ]] || fail "调优后记录已存在：$DATA_DIR/after.csv；拒绝重复测速。"
 fi
+BUDGET_MIB=''
+if [[ "$MODE" == baseline ]]; then
+  BUDGET_MIB=$(choose_budget_mib "$ARG")
+elif [[ "$MODE" == after ]]; then
+  [[ -s "$DATA_DIR/speedtest-budget-mib" ]] || fail '缺少基线保存的流量预算；请保留同一份测试记录目录。'
+  BUDGET_MIB=$(<"$DATA_DIR/speedtest-budget-mib")
+  BUDGET_MIB=$(choose_budget_mib "$BUDGET_MIB")
+fi
 prepare
 mkdir -p "$DATA_DIR"
 chmod 700 "$DATA_DIR"
 
 if [[ "$MODE" == setup ]]; then exit 0; fi
+if [[ "$MODE" == baseline ]]; then
+  printf '%s\n' "$BUDGET_MIB" > "$DATA_DIR/speedtest-budget-mib"
+  chmod 600 "$DATA_DIR/speedtest-budget-mib"
+fi
 
 if [[ "$MODE" == tune ]]; then
+  tune_iface=$(ip route show default 2>/dev/null | awk 'NR==1 {print $5}' || true)
+  tune_before=$(traffic_bytes "$tune_iface")
   printf '[*] 执行 tcpfit 基础调优：proxy，%s Mbps；不运行 probe 或 sweep。\n' "$ARG"
-  if ! tcpfit tune --role proxy --bw "$ARG" >"$DATA_DIR/tune.log" 2>&1; then
+  tune_rc=0
+  tcpfit tune --role proxy --bw "$ARG" >"$DATA_DIR/tune.log" 2>&1 || tune_rc=$?
+  tune_after=$(traffic_bytes "$tune_iface")
+  tune_bytes=$((tune_after - tune_before))
+  (( tune_bytes >= 0 )) || tune_bytes=0
+  printf 'interface=%s\nrx_tx_delta_bytes=%s\n' "${tune_iface:-unknown}" "$tune_bytes" > "$DATA_DIR/tune.traffic"
+  chmod 600 "$DATA_DIR/tune.traffic"
+  if (( tune_rc != 0 )); then
     tail -n 60 "$DATA_DIR/tune.log" >&2 || true
-    fail 'tcpfit 基础调优失败；没有写入 tune.done 标记，请检查日志。'
+    fail 'tcpfit 基础调优失败；流量计数已保存，但未写入 tune.done。'
   fi
   cat "$DATA_DIR/tune.log"
   printf 'bandwidth_mbps=%s\n' "$ARG" > "$DATA_DIR/tune.done"
   chmod 600 "$DATA_DIR/tune.log" "$DATA_DIR/tune.done"
-  printf '\n[OK] 基础调优完成。现在可运行：%s after\n' "$0"
+  printf '[OK] 基础调优完成；此阶段网卡 RX+TX 增量：%s bytes（含其他并发流量）。\n' "$tune_bytes"
+  printf '\n[OK] 现在可运行：%s after\n' "$0"
   exit 0
 fi
 
@@ -212,14 +347,16 @@ csv="$DATA_DIR/$MODE.csv"
 iface=$(ip route show default 2>/dev/null | awk 'NR==1 {print $5}' || true)
 before=$(traffic_bytes "$iface")
 stamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-export TOS_PROBE_SIZE=64MiB
+PER_CARRIER_MIB=$((BUDGET_MIB / 2))
+export TOS_PROBE_SIZE="${PER_CARRIER_MIB}MiB"
 export TOS_TIMEOUT=10
 export SPEEDTEST_APPLECDN_ENABLED=0
 export TCPQUALITY_TCP_INFO=0
 export TCPQUALITY_RETRANS_TRACE=0
 
 printf '[%s] 开始广东电信/移动 IPv4 专项测试（%s）\n' "$stamp" "$MODE"
-printf '单线程下载上限：每个运营商 64 MiB，另有每次 10 秒超时。\n'
+printf '本轮单线程下载载荷预算：合计 %s MiB，电信/移动各最多 %s MiB；每次另有 10 秒超时。\n' "$BUDGET_MIB" "$PER_CARRIER_MIB"
+printf '两轮单线程下载载荷合计最多约 %s MiB；不含依赖安装、协议开销及其他流量。\n' "$((BUDGET_MIB * 2))"
 printf '默认网卡 RX+TX 计数包含其他并发流量。\n'
 if ! bash "$CORE" --gd-proxy-only --no-rank-upload >"$log" 2>&1; then
   printf '[!] TcpQuality 失败；日志：%s\n' "$log" >&2
@@ -233,7 +370,7 @@ after=$(traffic_bytes "$iface")
 bytes=$((after - before))
 (( bytes >= 0 )) || bytes=0
 printf '%s\n' "$stamp" > "$DATA_DIR/$MODE.time"
-printf 'interface=%s\nrx_tx_delta_bytes=%s\n' "${iface:-unknown}" "$bytes" > "$DATA_DIR/$MODE.traffic"
+printf 'interface=%s\nrx_tx_delta_bytes=%s\nspeedtest_budget_mib=%s\n' "${iface:-unknown}" "$bytes" "$BUDGET_MIB" > "$DATA_DIR/$MODE.traffic"
 chmod 600 "$log" "$csv" "$DATA_DIR/$MODE.time" "$DATA_DIR/$MODE.traffic"
 printf '\n已保存 %s 结果：\n  %s\n  %s\n' "$MODE" "$log" "$csv"
 printf '测试期间网卡 RX+TX 增量：%s bytes（含其他并发流量）。\n' "$bytes"
