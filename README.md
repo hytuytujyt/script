@@ -110,32 +110,31 @@ cat /etc/sing-box/node_output.txt
 
 ## 低流量 VPS 对比测试（独立工具）
 
-`tcpquality-gd/` 是与节点安装器分开的 TcpQuality 专用副本：只测广东电信、移动 IPv4 普通/大包回程，以及 VPS → 广东的单线程下载；不测联通、IPv6、上传、其他地区、教育网、国际互联或 Apple CDN。每个运营商每轮下载最多 64 MiB，前后两轮单线程下载载荷最多约 256 MiB；默认每次下载还有 10 秒超时，因此实际通常更少。依赖下载、协议开销、其他 VPS 流量及商家计费口径不包含在这个理论载荷上限内，不是计费硬保证。
+`tcpquality-gd/` 是与节点安装器分开的 TcpQuality 专用副本，只测广东电信、移动 IPv4 普通/大包回程，以及 VPS → 广东的单线程下载；不测联通、IPv6、上传、其他地区、教育网、国际互联或 Apple CDN。每个运营商每轮最多下载 64 MiB，前后两轮载荷上限约 256 MiB；每次下载另有 10 秒超时，实际通常更少。依赖安装、协议开销、其他 VPS 流量和商家计费口径不包含在载荷上限内，所以这不是计费保证。
 
-运行前需已有 `curl`、`ip`、`nstat`、`nping`、`traceroute`、`nexttrace-tiny`、`awk` 和 `sha256sum`；缺工具时脚本会先退出，不会自动安装依赖，也不会悄悄跳过大包测试。Debian/Ubuntu 可先运行 `apt-get update && apt-get install -y nmap traceroute iproute2 curl`；NextTrace Tiny 官方安装命令为 `curl -fsSL https://nxtrace.org/nt | bash -s -- --flavor tiny`。依赖安装流量应另行计入退款额度。
+**脚本会自动准备依赖**：首次运行时检查系统工具，支持 Debian/Ubuntu 和 Alpine；缺少时会先列出要安装/下载的项目并询问确认，然后安装系统依赖、NextTrace Tiny、tcpfit v0.5.9，并下载及校验 TcpQuality core 和 tcpfit 的 SHA256。缺少大包回程所需工具时不会静默跳过。依赖安装本身也会消耗流量，请在确认前考虑退款额度。需要 Bash、root 权限和网络连接。
 
-以 root 运行，先做基线并保存记录。运行脚本会自动下载并校验配套 TcpQuality core：
+### 流程
 
 ```sh
+# 下载运行器（这一步需要 curl）
 curl -fsSL https://raw.githubusercontent.com/hytuytujyt/script/main/tcpquality-gd/run.sh -o /root/tq-gd.sh
 chmod 700 /root/tq-gd.sh
+
+# 自动安装缺少的依赖及工具，然后运行调优前基线
 /root/tq-gd.sh baseline
-```
 
-然后只运行 tcpfit 基础调优。若 `tcpfit` 命令不存在，首次执行官方脚本进入菜单：选 `2`（基础调优），用途选 `1`（代理/加速，或直接回车），带宽填 VPS 已知套餐带宽数值（例如 `200`），不要留空自动探测。调优结束按任意键返回菜单，再选 `0` 退出。不要选 `1` 一键调优或 `3` 拐点测试：
+# 只做基础调优：带宽填套餐已知 Mbps 数值，例如 200；不运行 iperf 测速或拐点扫描
+/root/tq-gd.sh tune 200
 
-```sh
-bash <(curl -fsSL https://raw.githubusercontent.com/Kylin010/tcpfit/main/tcpfit.sh)
-```
-
-已安装 tcpfit 时可直接用 `tcpfit tune --role proxy --bw <Mbps>`。只有在完成基础调优后，再运行同范围复测及比较：
-
-```sh
+# 调优后复测与前后对比
 /root/tq-gd.sh after
 /root/tq-gd.sh compare
 ```
 
-日志和 CSV 默认保存在 `/root/tcpquality-gd-compare/`。基线和复测各只允许执行一次；确需重开一组时，先备份结果，再显式执行 `RESET=YES /root/tq-gd.sh reset`。如果调优后指标明显变差，可运行 `tcpfit rollback` 恢复首次调优前保存的状态。拐点扫描可能消耗 GB 级流量；以 tcpfit 当前版本给出的预估为准，在退款流量额度紧张时跳过扫描。
+`baseline` 首次运行会询问是否安装缺少的工具。拒绝安装时不会开始测试。`tune 200` 会使用 proxy 角色执行 `tcpfit tune --role proxy --bw 200`；数字必须换成该 VPS 的实际已知带宽，不能留空或写 `auto`。若已有 tcpfit，脚本沿用已有版本；没有时会安装经过 SHA256 校验的官方 v0.5.9 到 `/usr/local/bin/tcpfit`。不需要再手工进入菜单，也不要选一键调优或 sweep。
+
+日志和 CSV 默认保存在 `/root/tcpquality-gd-compare/`。基线、基础调优和调优后测试各有一次性保护，避免误重复测速。确需重开一组时先备份结果，再运行 `tcpfit rollback`（如需恢复初始网络参数），然后显式执行 `RESET=YES /root/tq-gd.sh reset`；reset 只删比较记录，不会卸载依赖或回滚 tcpfit。退款流量额度紧张时不要运行拐点扫描，它可能消耗 GB 级流量；应先查看 tcpfit 给出的估算。
 
 ## 关闭 SSH 密码登录（可选，脚本不会自动做）
 
